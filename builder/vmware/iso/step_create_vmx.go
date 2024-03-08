@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ type vmxTemplateData struct {
 	MemorySize string
 
 	DiskName string
+	IsVHD    bool
 	vmwcommon.DiskAndCDConfigData
 
 	Network_Type    string
@@ -163,12 +165,20 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		}
 	}
 
+	var diskName string
+	if path.Ext(isoPath) == ".vhd" {
+		diskName = strings.Replace(isoPath, "/", "\\", -1)
+	} else {
+		diskName = config.DiskName + ".vmdk"
+	}
+
 	templateData := vmxTemplateData{
 		Name:     config.VMName,
 		GuestOS:  config.GuestOSType,
-		DiskName: config.DiskName,
+		DiskName: diskName,
 		Version:  config.Version,
 		ISOPath:  isoPath,
+		IsVHD:    path.Ext(isoPath) == ".vhd",
 
 		Network_Adapter: "e1000",
 
@@ -495,14 +505,18 @@ scsi0.virtualDev = "{{ .SCSI_diskAdapterType }}"
 scsi0.pciSlotNumber = "16"
 scsi0:0.redo = ""
 sata0.present = "{{ .SATA_Present }}"
-nvme0.present = "{{ .NVME_Present }}"
+{{if .IsVHD }}nvme0.present = "TRUE"
 
+nvme0:0.present = "TRUE"
+nvme0:0.fileName = "{{ .DiskName }}"
+
+{{else}}nvme0.present = "{{ .NVME_Present }}"
 {{ .DiskType }}0:0.present = "TRUE"
-{{ .DiskType }}0:0.fileName = "{{ .DiskName }}.vmdk"
+{{ .DiskType }}0:0.fileName = "{{ .DiskName }}"
 
 {{ .CDROMType }}0:{{ .CDROMType_PrimarySecondary }}.present = "TRUE"
 {{ .CDROMType }}0:{{ .CDROMType_PrimarySecondary }}.fileName = "{{ .ISOPath }}"
-{{ .CDROMType }}0:{{ .CDROMType_PrimarySecondary }}.deviceType = "cdrom-image"
+{{ .CDROMType }}0:{{ .CDROMType_PrimarySecondary }}.deviceType = "cdrom-image"{{end}}
 
 // Sound
 sound.startConnected = "{{ .Sound_Present }}"
