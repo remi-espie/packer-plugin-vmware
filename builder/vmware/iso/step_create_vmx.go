@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -166,7 +165,7 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 	}
 
 	var diskName string
-	if path.Ext(isoPath) == ".vhd" {
+	if filepath.Ext(isoPath) == ".vhd" {
 		diskName = strings.Replace(isoPath, "/", "\\", -1)
 	} else {
 		diskName = config.DiskName + ".vmdk"
@@ -178,7 +177,7 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		DiskName: diskName,
 		Version:  config.Version,
 		ISOPath:  isoPath,
-		IsVHD:    path.Ext(isoPath) == ".vhd",
+		IsVHD:    filepath.Ext(isoPath) == ".vhd",
 
 		Network_Adapter: "e1000",
 
