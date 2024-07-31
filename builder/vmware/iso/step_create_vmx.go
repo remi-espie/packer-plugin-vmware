@@ -34,7 +34,7 @@ type vmxTemplateData struct {
 
 	DiskName string
 	common.DiskAndCDConfigData
-	IsVHD bool
+	IsVMDK bool
 
 	Network_Type    string
 	Network_Device  string
@@ -101,14 +101,14 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		s.tempDir = vmxDir
 	}
 
-	// If the isoPath is a VHD or a VMDK, we need to copy it to a temporary directory
+	// If the isoPath is a VMDK, we need to copy it to a temporary directory
 	var diskName string
-	if filepath.Ext(isoPath) == ".vhd" || filepath.Ext(isoPath) == ".vmdk" {
+	if filepath.Ext(isoPath) == ".vmdk" {
 		if config.RemoteType == "" {
 			ui.Say("Copying boot drive...")
-			isoPath, err := s.CopyVHD(isoPath, vmxDir)
+			isoPath, err := s.CopyVMDK(isoPath, vmxDir)
 			if err != nil {
-				err := fmt.Errorf("error copying VHD file: %s", err)
+				err := fmt.Errorf("error copying VMDK file: %s", err)
 				state.Put("error", err)
 				ui.Error(err.Error())
 				return multistep.ActionHalt
@@ -236,7 +236,7 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		DiskName:        diskName,
 		Version:         strconv.Itoa(config.Version),
 		ISOPath:         isoPath,
-		IsVHD:           filepath.Ext(isoPath) == ".vhd" || filepath.Ext(isoPath) == ".vmdk",
+		IsVMDK:          filepath.Ext(isoPath) == ".vmdk",
 		Network_Adapter: "e1000",
 
 		Sound_Present: map[bool]string{true: "TRUE", false: "FALSE"}[config.HWConfig.Sound],
@@ -464,7 +464,7 @@ func (s *stepCreateVMX) Cleanup(multistep.StateBag) {
 	}
 }
 
-func (s *stepCreateVMX) CopyVHD(path string, vmxDir string) (string, error) {
+func (s *stepCreateVMX) CopyVMDK(path string, vmxDir string) (string, error) {
 	sourceFile, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -491,9 +491,9 @@ func (s *stepCreateVMX) CopyVHD(path string, vmxDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	newVHDPath := destinationFile.Name()
+	newVMDKPath := destinationFile.Name()
 
-	return newVHDPath, nil
+	return newVMDKPath, nil
 }
 
 // This is the default VMX template used if no other template is given.
@@ -599,7 +599,7 @@ scsi0.virtualDev = "{{ .SCSI_diskAdapterType }}"
 scsi0.pciSlotNumber = "16"
 scsi0:0.redo = ""
 sata0.present = "{{ .SATA_Present }}"
-{{if .IsVHD }}nvme0.present = "TRUE"
+{{if .IsVMDK }}nvme0.present = "TRUE"
 
 nvme0:0.present = "TRUE"
 nvme0:0.fileName = "{{ .DiskName }}"
