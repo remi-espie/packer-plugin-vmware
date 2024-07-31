@@ -77,6 +77,7 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 	config := state.Get("config").(*Config)
 	isoPath := state.Get("iso_path").(string)
 	ui := state.Get("ui").(packersdk.Ui)
+	driver := state.Get("driver").(common.Driver)
 
 	// Convert the iso_path into a path relative to the .vmx file if possible
 	if relativeIsoPath, err := filepath.Rel(config.VMXTemplatePath, filepath.FromSlash(isoPath)); err == nil {
@@ -100,21 +101,42 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		s.tempDir = vmxDir
 	}
 
-	// If the isoPath is a VHD, we need to copy it to a temporary directory
+	// If the isoPath is a VHD or a VMDK, we need to copy it to a temporary directory
 	var diskName string
-	if filepath.Ext(isoPath) == ".vhd" {
-		ui.Say("Copying boot VHD...")
-		isoPath, err := s.CopyVHD(isoPath, vmxDir)
-		if err != nil {
-			err := fmt.Errorf("error copying VHD file: %s", err)
-			state.Put("error", err)
-			ui.Error(err.Error())
-			return multistep.ActionHalt
-		}
-		// If running on windows, we need to replace the slashes with backslashes
-		if runtime.GOOS == "windows" && config.RemoteType == "" {
-			diskName = strings.Replace(isoPath, "/", "\\", -1)
+	if filepath.Ext(isoPath) == ".vhd" || filepath.Ext(isoPath) == ".vmdk" {
+		if config.RemoteType == "" {
+			ui.Say("Copying boot drive...")
+			isoPath, err := s.CopyVHD(isoPath, vmxDir)
+			if err != nil {
+				err := fmt.Errorf("error copying VHD file: %s", err)
+				state.Put("error", err)
+				ui.Error(err.Error())
+				return multistep.ActionHalt
+			}
+			// If running on windows, we need to replace the slashes with backslashes
+			if runtime.GOOS == "windows" {
+				diskName = strings.Replace(isoPath, "/", "\\", -1)
+			} else {
+				diskName = isoPath
+			}
 		} else {
+			ui.Say("Converting boot drive in remote...")
+			// launch a cp command to a temp directory on the remote machine
+			remote, ok := driver.(common.RemoteDriver)
+			if !ok {
+				return multistep.ActionHalt
+			}
+
+			esx5, ok := remote.(*common.ESX5Driver)
+			if !ok {
+				return multistep.ActionHalt
+			}
+
+			isoPath, err := esx5.ConvertVmdk(isoPath)
+			if err != nil {
+				return multistep.ActionHalt
+			}
+
 			diskName = isoPath
 		}
 	} else {
@@ -214,7 +236,7 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 		DiskName:        diskName,
 		Version:         strconv.Itoa(config.Version),
 		ISOPath:         isoPath,
-		IsVHD:           filepath.Ext(isoPath) == ".vhd",
+		IsVHD:           filepath.Ext(isoPath) == ".vhd" || filepath.Ext(isoPath) == ".vmdk",
 		Network_Adapter: "e1000",
 
 		Sound_Present: map[bool]string{true: "TRUE", false: "FALSE"}[config.HWConfig.Sound],
@@ -244,14 +266,14 @@ func (s *stepCreateVMX) Run(ctx context.Context, state multistep.StateBag) multi
 	if config.HWConfig.NetworkName != "" {
 		templateData.Network_Name = config.HWConfig.NetworkName
 	}
-	driver := state.Get("driver").(common.Driver).GetVmwareDriver()
+	networkDriver := driver.GetVmwareDriver()
 
 	// check to see if the driver implements a network mapper for mapping
 	// the network-type to its device-name.
-	if driver.NetworkMapper != nil {
+	if networkDriver.NetworkMapper != nil {
 
 		// read network map configuration into a NetworkNameMapper.
-		netmap, err := driver.NetworkMapper()
+		netmap, err := networkDriver.NetworkMapper()
 		if err != nil {
 			err := fmt.Errorf("error reading network map configuration: %s", err)
 			state.Put("error", err)

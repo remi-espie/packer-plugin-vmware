@@ -283,6 +283,21 @@ func (d *EsxiDriver) UploadISO(localPath string, checksum string, ui packersdk.U
 	return finalPath, nil
 }
 
+func (d *EsxiDriver) ConvertVmdk(remotePath string) (string, error) {
+	finalPath := filepath.Base(remotePath)
+	finalPath = d.datastorePath(filepath.Join("tmp", finalPath))
+	if err := d.mkdir(filepath.ToSlash(filepath.Dir(finalPath))); err != nil {
+		return "", err
+	}
+
+	log.Printf("Converting %s to %s", remotePath, finalPath)
+	if err := d.sh("vmkfstools", "-i", strconv.Quote(remotePath), "-d", "thin", strconv.Quote(finalPath)); err != nil {
+		return "", err
+	}
+
+	return finalPath, nil
+}
+
 func (d *EsxiDriver) RemoveCache(localPath string) error {
 	finalPath := d.CachePath(localPath)
 	log.Printf("Removing remote cache path %s (local %s)...", finalPath, localPath)

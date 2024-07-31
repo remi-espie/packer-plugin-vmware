@@ -15,6 +15,10 @@ type RemoteDriver interface {
 	// exists.
 	UploadISO(path string, checksum string, ui packersdk.Ui) (string, error)
 
+	// ConvertVmdk convert a VMDK from remotePath to a remote temporary directory
+	// to work within ESXi and return the path of the converted file
+	ConvertVmdk(remotePath string) (string, error)
+
 	// RemoveCache deletes localPath from the remote cache.
 	RemoveCache(localPath string) error
 
